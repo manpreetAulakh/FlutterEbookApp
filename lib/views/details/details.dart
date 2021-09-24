@@ -1,8 +1,8 @@
 import 'dart:convert';
+import 'dart:developer';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:epub_viewer/epub_viewer.dart';
-import 'package:esys_flutter_share/esys_flutter_share.dart';
+import 'package:share/share.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_ebook_app/components/book_list_item.dart';
@@ -13,6 +13,11 @@ import 'package:flutter_ebook_app/models/category.dart';
 import 'package:flutter_ebook_app/view_models/details_provider.dart';
 import 'package:flutter_icons/flutter_icons.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart'
+    show SystemChrome, SystemUiOverlayStyle, rootBundle;
+import 'dart:typed_data';
+import 'package:epub_view/epub_view.dart';
+import 'dart:io';
 
 class Details extends StatefulWidget {
   final Entry entry;
@@ -70,7 +75,9 @@ class _DetailsState extends State<Details> {
                 ),
               ),
               IconButton(
-                onPressed: () => _share(),
+                onPressed: () {
+                  //  return _share();
+                },
                 icon: Icon(
                   Feather.share,
                 ),
@@ -234,23 +241,12 @@ class _DetailsState extends State<Details> {
       List locators =
           await LocatorDB().getLocator(widget.entry.id.t.toString());
 
-      EpubViewer.setConfig(
-        identifier: 'androidBook',
-        themeColor: Theme.of(context).accentColor,
-        scrollDirection: EpubScrollDirection.VERTICAL,
-        enableTts: false,
-        allowSharing: true,
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EpubScreen(path),
+        ),
       );
-      EpubViewer.open(path,
-          lastLocation:
-              locators.isNotEmpty ? EpubLocator.fromJson(locators[0]) : null);
-      EpubViewer.locatorStream.listen((event) async {
-        // Get locator here
-        Map json = jsonDecode(event);
-        json['bookId'] = widget.entry.id.t.toString();
-        // Save locator to your database
-        await LocatorDB().update(json);
-      });
     }
   }
 
@@ -325,11 +321,102 @@ class _DetailsState extends State<Details> {
     }
   }
 
-  _share() {
-    Share.text(
-      '${widget.entry.title.t} by ${widget.entry.author.name.t}',
-      'Read/Download ${widget.entry.title.t} from ${widget.entry.link[3].href}.',
-      'text/plain',
+  // _share() {
+  //   Share.text(
+  //     '${widget.entry.title.t} by ${widget.entry.author.name.t}',
+  //     'Read/Download ${widget.entry.title.t} from ${widget.entry.link[3].href}.',
+  //     'text/plain',
+  //   );
+  // }
+}
+
+class EpubScreen extends StatefulWidget {
+  final String assetName;
+  EpubScreen(this.assetName, {Key key}) : super(key: key);
+
+  @override
+  _EpubScreenState createState() => _EpubScreenState();
+}
+
+class _EpubScreenState extends State<EpubScreen> {
+  EpubController _epubReaderController;
+
+  @override
+  void initState() {
+    final loadedBook = _loadFromAssets(widget.assetName);
+    _epubReaderController = EpubController(
+      document: EpubReader.readBook(loadedBook),
+      //  document: EpubReader,
+      // epubCfi:
+      //     'epubcfi(/6/26[id4]!/4/2/2[id4]/22)', // book.epub Chapter 3 paragraph 10
+      // epubCfi:
+      //     'epubcfi(/6/6[chapter-2]!/4/2/1612)', // book_2.epub Chapter 16 paragraph 3
     );
+    super.initState();
+  }
+
+  @override
+  void dispose() {
+    _epubReaderController.dispose();
+    super.dispose();
+  }
+
+  Future<Uint8List> _loadFromAssets(String assetName) async {
+    final file = File(assetName);
+
+    // Read the file
+    final bytes = await file.readAsBytes();
+
+    // log(contents);
+    return bytes.buffer.asUint8List();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(
+          title: EpubActualChapter(
+            controller: _epubReaderController,
+            builder: (chapterValue) => Text(
+              (chapterValue?.chapter?.Title?.trim() ?? '').replaceAll('\n', ''),
+              textAlign: TextAlign.start,
+            ),
+          ),
+          actions: <Widget>[
+            IconButton(
+              icon: const Icon(Icons.save_alt),
+              color: Colors.white,
+              onPressed: () => _showCurrentEpubCfi(context),
+            ),
+          ],
+        ),
+        drawer: Drawer(
+          child: EpubReaderTableOfContents(controller: _epubReaderController),
+        ),
+        body: EpubView(
+          controller: _epubReaderController,
+          onDocumentLoaded: (document) {
+            print('isLoaded: ${document?.Chapters}');
+          },
+          textStyle: TextStyle(fontSize: 20),
+          dividerBuilder: (_) => Divider(),
+        ),
+      );
+
+  void _showCurrentEpubCfi(context) {
+    final cfi = _epubReaderController.generateEpubCfi();
+
+    if (cfi != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(cfi),
+          action: SnackBarAction(
+            label: 'GO',
+            onPressed: () {
+              _epubReaderController.gotoEpubCfi(cfi);
+            },
+          ),
+        ),
+      );
+    }
   }
 }

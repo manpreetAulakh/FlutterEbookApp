@@ -66,9 +66,9 @@ class DetailsProvider extends ChangeNotifier {
       // check if book has been deleted
       String path = downloads[0]['path'];
       print(path);
-      if(await File(path).exists()){
+      if (await File(path).exists()) {
         setDownloaded(true);
-      }else{
+      } else {
         setDownloaded(false);
       }
     } else {
@@ -82,7 +82,7 @@ class DetailsProvider extends ChangeNotifier {
   }
 
   addDownload(Map body) async {
-    await dlDB.removeAllWithId({'id': entry.id.t.toString()});
+    await dlDB.removeAllWithId({'id': body['id'].toString()});
     await dlDB.add(body);
     checkDownload();
   }
@@ -95,11 +95,10 @@ class DetailsProvider extends ChangeNotifier {
   }
 
   Future downloadFile(BuildContext context, String url, String filename) async {
-    PermissionStatus permission = await PermissionHandler()
-        .checkPermissionStatus(PermissionGroup.storage);
+    PermissionStatus permission = await Permission.storage.status;
 
-    if (permission != PermissionStatus.granted) {
-      await PermissionHandler().requestPermissions([PermissionGroup.storage]);
+    if (!permission.isGranted) {
+      await Permission.storage.request().isGranted;
       startDownload(context, url, filename);
     } else {
       startDownload(context, url, filename);
@@ -107,24 +106,15 @@ class DetailsProvider extends ChangeNotifier {
   }
 
   startDownload(BuildContext context, String url, String filename) async {
-    Directory appDocDir = Platform.isAndroid
-        ? await getExternalStorageDirectory()
-        : await getApplicationDocumentsDirectory();
-    if (Platform.isAndroid) {
-      Directory(appDocDir.path.split('Android')[0] + '${Constants.appName}')
-          .createSync();
-    }
 
-    String path = Platform.isIOS
-        ? appDocDir.path + '/$filename.epub'
-        : appDocDir.path.split('Android')[0] +
-            '${Constants.appName}/$filename.epub';
+    Directory appDocDir = await getApplicationDocumentsDirectory();
+    String path = appDocDir.path + '/$filename.epub';
     print(path);
     File file = File(path);
-    if (!await file.exists()) {
+    if (await file.exists()) {
+      await file.delete();
       await file.create();
     } else {
-      await file.delete();
       await file.create();
     }
 
